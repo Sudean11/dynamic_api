@@ -6,32 +6,50 @@ import {
   StandardResponse,
 } from "../helpers/types";
 
+// Define types for request params and query parameters
+interface GetProjectQuery {
+  page?: string;
+}
+
+interface GetProjectParams {
+  project_id?: string;
+}
+
 export const getProjectHandler: RequestHandler<
   unknown,
   StandardResponse<{ projects: Project[]; totalCount: number }>,
   unknown,
-  { page: number }
-> = async (req: Request, res: Response, next: NextFunction) => {
+  GetProjectQuery
+> = async (
+  req: Request<
+    unknown,
+    StandardResponse<{ projects: Project[]; totalCount: number }>,
+    unknown,
+    GetProjectQuery
+  >,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const elementsPerPage: number = 5;
-    let { page } = req.query;
+    const page = parseInt(req.query.page || "1", 10); // Ensure page is a number
     const projects: Project[] = await ProjectModel.find({
       "Maintained_by.email": req.token.email,
     })
-      .skip((+page - 1) * elementsPerPage)
+      .skip((page - 1) * elementsPerPage)
       .limit(elementsPerPage);
 
-    const count = await ProjectModel.find({
+    const count = await ProjectModel.countDocuments({
       "Maintained_by.email": req.token.email,
     });
-    const totalCount = count.length;
+    const totalCount = count;
 
     if (!projects || projects.length === 0) {
       throw new ErrorWithStatus("Projects not found", 404);
     }
     res.status(200).json({
       success: true,
-      data: { projects: projects, totalCount: totalCount },
+      data: { projects, totalCount },
     });
   } catch (error) {
     next(error);
@@ -44,7 +62,11 @@ export const createProjectHandler: RequestHandler<
   StandardResponse<Project>,
   SingleProject,
   unknown
-> = async (req: Request, res: Response, next: NextFunction) => {
+> = async (
+  req: Request<unknown, StandardResponse<Project>, SingleProject, unknown>,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const savedProject = await ProjectModel.create({
       ...req.body,
@@ -56,7 +78,6 @@ export const createProjectHandler: RequestHandler<
         },
       ],
     });
-    console.log(savedProject);
     res.status(201).json({ success: true, data: savedProject });
   } catch (error) {
     next(error);
@@ -65,14 +86,18 @@ export const createProjectHandler: RequestHandler<
 
 // Get Project by ID Handler
 export const getProjectByIdHandler: RequestHandler<
-  { project_id: string },
+  GetProjectParams,
   StandardResponse<Project>,
   unknown,
   unknown
-> = async (req: Request, res: Response, next: NextFunction) => {
+> = async (
+  req: Request<GetProjectParams, StandardResponse<Project>, unknown, unknown>,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const { project_id } = req.params;
-    const project = await ProjectModel.findById({ _id: project_id });
+    const project = await ProjectModel.findById(project_id);
     if (!project) {
       throw new ErrorWithStatus("Project not found", 404);
     }
@@ -84,18 +109,28 @@ export const getProjectByIdHandler: RequestHandler<
 
 // Update Project Handler
 export const updateProjectHandler: RequestHandler<
-  { project_id: string },
-  StandardResponse<Project>,
+  GetProjectParams,
+  StandardResponse<Project | null>,
   SingleProject,
   unknown
-> = async (req: Request, res: Response, next: NextFunction) => {
+> = async (
+  req: Request<
+    GetProjectParams,
+    StandardResponse<Project | null>,
+    SingleProject,
+    unknown
+  >,
+  res: Response,
+  next: NextFunction
+) => {
   const { project_id } = req.params;
   const updateData = req.body;
 
   try {
-    const updatedProject = await ProjectModel.updateOne(
-      { _id: project_id },
-      { $set: { name: updateData.name } }
+    const updatedProject = await ProjectModel.findByIdAndUpdate(
+      project_id,
+      { $set: updateData },
+      { new: true }
     );
 
     if (!updatedProject) {
@@ -109,16 +144,20 @@ export const updateProjectHandler: RequestHandler<
 
 // Delete Project Handler
 export const deleteProjectHandler: RequestHandler<
-  { project_id: string },
+  GetProjectParams,
   StandardResponse<number>,
   unknown,
   unknown
-> = async (req: Request, res: Response, next: NextFunction) => {
+> = async (
+  req: Request<GetProjectParams, StandardResponse<number>, unknown, unknown>,
+  res: Response,
+  next: NextFunction
+) => {
   const { project_id } = req.params;
 
   try {
     const deletedProject = await ProjectModel.deleteOne({ _id: project_id });
-    if (!deletedProject) {
+    if (deletedProject.deletedCount === 0) {
       throw new ErrorWithStatus("Project not found", 404);
     }
 
